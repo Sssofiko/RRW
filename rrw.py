@@ -148,24 +148,29 @@ def shift_histogram_for_watermark(robust_features, watermark_bits, threshold_t):
             modified_features.append(robust_features[k] - threshold_t)
     return modified_features
 
-def update_dct_coefficients(quantized_dct, robust_features, selected_bands):
+def update_dct_coefficients(quantized_dct, modified_features, selected_bands):
     """
-    Updates the DCT coefficients based on modified robust features.
+    Обновляет коэффициенты DCT с учетом встроенного водяного знака.
+
+    Исправление: Учитываем, что изменения коэффициентов DCT не должны выходить за допустимый диапазон.
 
     Parameters:
-        quantized_dct (list of numpy.ndarray): List of quantized DCT blocks.
-        robust_features (list of int): List of modified robust features.
-        selected_bands (list): Indices of selected frequency bands.
+        quantized_dct (list of numpy.ndarray): Список квантованных DCT-блоков.
+        modified_features (list of int): Измененные признаки для встраивания.
+        selected_bands (list): Индексы выбранных частотных полос.
 
     Returns:
-        updated_dct (list of numpy.ndarray): Updated quantized DCT blocks.
+        updated_dct (list of numpy.ndarray): Обновленные DCT-блоки.
     """
     updated_dct = quantized_dct.copy()
     for i, block in enumerate(updated_dct):
-        feature_value = robust_features[i]
-        for band_index, (u, v) in enumerate(selected_bands):
-            block[u, v] = feature_value if band_index == 0 else block[u, v]  # Modify first band
+        if i < len(modified_features):
+            feature_value = modified_features[i]
+            for band_index, (u, v) in enumerate(selected_bands):
+                if band_index == 0:
+                    block[u, v] = np.clip(feature_value, -127, 127)  # Ограничиваем диапазон значений
     return updated_dct
+
 
 def dequantize_dct(quantized_dct):
     """
@@ -337,16 +342,19 @@ def extract_robust_features(watermarked_image_path, selected_bands, key_s):
 
 def extract_watermark(robust_features, threshold_t):
     """
-    Extracts the watermark bits from the histogram-shifted robust features.
+    Извлекает бинарный водяной знак из извлеченных признаков.
+
+    Исправление: Используем порог относительно среднего значения.
 
     Parameters:
-        robust_features (list of int): Extracted robust features.
-        threshold_t (int): Threshold used in histogram shifting.
+        robust_features (list of int): Извлеченные признаки.
+        threshold_t (int): Пороговое значение.
 
     Returns:
-        extracted_watermark (list of int): Extracted binary watermark sequence.
+        extracted_watermark (list of int): Извлеченный водяной знак (0 и 1).
     """
-    return [0 if feature >= 0 else 1 for feature in robust_features]
+    avg_feature = np.mean(robust_features)  # Усредняем признаки
+    return [1 if feature >= avg_feature else 0 for feature in robust_features]
 
 def restore_original_features(robust_features, threshold_t):
     """
@@ -363,21 +371,25 @@ def restore_original_features(robust_features, threshold_t):
 
 def restore_original_dct(quantized_dct, original_features, selected_bands):
     """
-    Restores the original quantized DCT coefficients.
+    Восстанавливает оригинальные коэффициенты DCT после удаления водяного знака.
+
+    Исправление: Добавляем обработку случаев, когда исходные значения выходят за диапазон.
 
     Parameters:
-        quantized_dct (list of numpy.ndarray): List of quantized DCT blocks.
-        original_features (list of int): Restored robust features.
-        selected_bands (list): Indices of selected frequency bands.
+        quantized_dct (list of numpy.ndarray): Квантованные DCT-блоки.
+        original_features (list of int): Восстановленные оригинальные признаки.
+        selected_bands (list): Индексы выбранных частотных полос.
 
     Returns:
-        restored_dct (list of numpy.ndarray): Reconstructed quantized DCT blocks.
+        restored_dct (list of numpy.ndarray): Восстановленные DCT-блоки.
     """
     restored_dct = quantized_dct.copy()
     for i, block in enumerate(restored_dct):
-        feature_value = original_features[i]
-        for band_index, (u, v) in enumerate(selected_bands):
-            block[u, v] = feature_value if band_index == 0 else block[u, v]  # Restore first band
+        if i < len(original_features):
+            feature_value = original_features[i]
+            for band_index, (u, v) in enumerate(selected_bands):
+                if band_index == 0:
+                    block[u, v] = np.clip(feature_value, -127, 127)  # Ограничиваем значения
     return restored_dct
 
 def reconstruct_original_image(watermarked_image_path, metadata_path, output_image_path, extracted_watermark_path):
@@ -426,26 +438,35 @@ def reconstruct_original_image(watermarked_image_path, metadata_path, output_ima
 
 def save_extracted_watermark(watermark_bits, size, output_path):
     """
-    Saves the extracted binary watermark as an image.
+    Сохраняет извлеченный водяной знак в виде изображения.
+
+    Исправление: Убедимся, что размер корректный перед reshaping.
 
     Parameters:
-        watermark_bits (list of int): Extracted binary watermark sequence.
-        size (tuple): (width, height) of the watermark.
-        output_path (str): Path to save the extracted watermark.
+        watermark_bits (list of int): Бинарный водяной знак.
+        size (tuple): Размер (width, height).
+        output_path (str): Путь сохранения.
     """
-    watermark_array = np.array(watermark_bits, dtype=np.uint8).reshape(size)
-    watermark_image = (watermark_array * 255).astype(np.uint8)  # Convert 0/1 to 0/255
-    cv2.imwrite(output_path, watermark_image)
-    print(f"Extracted watermark saved at {output_path}")
+    try:
+        watermark_array = np.array(watermark_bits, dtype=np.uint8)
+        if watermark_array.size != size[0] * size[1]:
+            raise ValueError(f"Размер watermark_bits ({watermark_array.size}) не совпадает с {size}")
+
+        watermark_array = watermark_array.reshape(size)
+        watermark_image = (watermark_array * 255).astype(np.uint8)
+        cv2.imwrite(output_path, watermark_image)
+        print(f"Извлеченный водяной знак сохранен: {output_path}")
+    except Exception as e:
+        print(f"Ошибка при сохранении водяного знака: {e}")
 
 
 if __name__ == "__main__":
     embed_watermark(
-        cover_image_path="lena.jpg",
+        cover_image_path="Lena.jpg",
         watermark_image_path="watermark.jpg",
         output_image_path="watermarked.jpg",
         metadata_path="metadata.json",
-        threshold_t=5,
+        threshold_t=21,
         num_bands=10,
         key_s=np.random.permutation(10)
     )
