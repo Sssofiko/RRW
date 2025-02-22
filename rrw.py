@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import json
+import scipy.stats
 
 def convert_to_YCbCr(image_path):
     """
@@ -88,7 +89,7 @@ def quantize_DCT(dct_blocks):
 
 def select_frequency_bands(num_bands):
     """
-    Selects num_bands frequency bands from the low-to-mid frequency range.
+    Selects the most robust frequency bands based on JPEG compression impact.
 
     Parameters:
         num_bands (int): Number of frequency bands to select.
@@ -96,8 +97,12 @@ def select_frequency_bands(num_bands):
     Returns:
         selected_bands (list): Indices of selected frequency bands.
     """
-    low_freq_bands = [(u, v) for u in range(8) for v in range(8) if (u, v) != (0, 0)]  # Exclude DC coefficient
-    return low_freq_bands[:num_bands]  # Select the first num_bands frequencies
+    # Predefined order of DCT frequency bands based on robustness
+    robust_bands = [
+        (1, 2), (2, 1), (2, 2), (1, 3), (3, 1), (2, 3), (3, 2), (1, 4), (4, 1), (3, 3)
+    ]
+
+    return robust_bands[:num_bands]  # Select first `num_bands` robust frequencies
 
 def compute_difference_statistic(block, selected_bands, key_s):
     """
@@ -134,41 +139,50 @@ def shift_histogram_for_watermark(robust_features, watermark_bits, threshold_t):
 
     Parameters:
         robust_features (list of int): List of computed robust features.
-        watermark_bits (list of int): Binary watermark sequence (0s and 1s).
+        watermark_bits (list of int): Binary watermark sequence.
         threshold_t (int): Threshold for shifting.
 
     Returns:
         modified_features (list of int): Updated robust features after embedding.
     """
-    modified_features = []
-    for k in range(len(robust_features)):
-        if watermark_bits[k] == 1:
-            modified_features.append(robust_features[k] + threshold_t)
-        else:
-            modified_features.append(robust_features[k] - threshold_t)
+    if len(watermark_bits) < len(robust_features):
+        watermark_bits = np.tile(watermark_bits, len(robust_features) // len(watermark_bits) + 1)[:len(robust_features)]
+
+    modified_features = [
+        feature + threshold_t if bit == 1 else feature - threshold_t
+        for feature, bit in zip(robust_features, watermark_bits)
+    ]
     return modified_features
 
-def update_dct_coefficients(quantized_dct, modified_features, selected_bands):
-    """
-    Обновляет коэффициенты DCT с учетом встроенного водяного знака.
 
-    Исправление: Учитываем, что изменения коэффициентов DCT не должны выходить за допустимый диапазон.
+def update_dct_coefficients(quantized_dct, modified_features, selected_bands, threshold_t):
+    """
+    Updates DCT coefficients with embedded watermark values.
 
     Parameters:
-        quantized_dct (list of numpy.ndarray): Список квантованных DCT-блоков.
-        modified_features (list of int): Измененные признаки для встраивания.
-        selected_bands (list): Индексы выбранных частотных полос.
+        quantized_dct (list of numpy.ndarray): List of quantized DCT blocks.
+        modified_features (list of int): Modified robust features.
+        selected_bands (list): Indices of selected frequency bands.
 
     Returns:
-        updated_dct (list of numpy.ndarray): Обновленные DCT-блоки.
+        updated_dct (list of numpy.ndarray): Updated DCT blocks.
     """
-    updated_dct = quantized_dct.copy()
+    updated_dct = [block.copy() for block in quantized_dct]
+
     for i, block in enumerate(updated_dct):
         if i < len(modified_features):
             feature_value = modified_features[i]
-            for band_index, (u, v) in enumerate(selected_bands):
-                if band_index == 0:
-                    block[u, v] = np.clip(feature_value, -127, 127)  # Ограничиваем диапазон значений
+
+            # Instead of distributing evenly, directly modify primary band
+            u, v = selected_bands[0]  # Use only the first selected band
+            current_value = block[u, v]
+
+            # Apply histogram shift with controlled step size
+            if feature_value > 0:
+                block[u, v] = np.clip(current_value + threshold_t, -127, 127)
+            else:
+                block[u, v] = np.clip(current_value - threshold_t, -127, 127)
+
     return updated_dct
 
 
@@ -287,7 +301,7 @@ def embed_watermark(cover_image_path, watermark_image_path, output_image_path, m
 
     # Step 4: Embed the watermark using histogram shifting
     modified_features = shift_histogram_for_watermark(robust_features, watermark_binary.flatten(), threshold_t)
-    updated_dct = update_dct_coefficients(quantized_dct, modified_features, selected_bands)
+    updated_dct = update_dct_coefficients(quantized_dct, modified_features, selected_bands, threshold_t)
 
     # Step 5: Reconstruct the JPEG image
     dequantized_dct = dequantize_dct(updated_dct)
@@ -340,25 +354,23 @@ def extract_robust_features(watermarked_image_path, selected_bands, key_s):
 
     return extracted_features
 
-def extract_watermark(robust_features, threshold_t):
+def extract_watermark(robust_features, threshold_t, margin=2):
     """
-    Извлекает бинарный водяной знак из извлеченных признаков.
-
-    Исправление: Используем порог относительно среднего значения.
+    Extracts binary watermark bits from robust features with noise tolerance.
 
     Parameters:
-        robust_features (list of int): Извлеченные признаки.
-        threshold_t (int): Пороговое значение.
+        robust_features (list of int): Extracted robust features.
+        threshold_t (int): Threshold used in histogram shifting.
+        margin (int): Allowed variation due to noise.
 
     Returns:
-        extracted_watermark (list of int): Извлеченный водяной знак (0 и 1).
+        extracted_watermark (list of int): Extracted binary watermark.
     """
-    avg_feature = np.mean(robust_features)  # Усредняем признаки
-    return [1 if feature >= avg_feature else 0 for feature in robust_features]
+    return [1 if feature >= -margin else 0 for feature in robust_features]
 
 def restore_original_features(robust_features, threshold_t):
     """
-    Restores the original robust features by reversing histogram shifting.
+    Restores original robust features by reversing histogram shifting.
 
     Parameters:
         robust_features (list of int): Extracted robust features.
@@ -367,29 +379,27 @@ def restore_original_features(robust_features, threshold_t):
     Returns:
         original_features (list of int): Restored robust features.
     """
-    return [feature - threshold_t if feature >= 0 else feature + threshold_t for feature in robust_features]
+    return [feature - threshold_t if feature >= threshold_t else feature + threshold_t for feature in robust_features]
 
 def restore_original_dct(quantized_dct, original_features, selected_bands):
     """
-    Восстанавливает оригинальные коэффициенты DCT после удаления водяного знака.
-
-    Исправление: Добавляем обработку случаев, когда исходные значения выходят за диапазон.
+    Restores original DCT coefficients after watermark removal.
 
     Parameters:
-        quantized_dct (list of numpy.ndarray): Квантованные DCT-блоки.
-        original_features (list of int): Восстановленные оригинальные признаки.
-        selected_bands (list): Индексы выбранных частотных полос.
+        quantized_dct (list of numpy.ndarray): Quantized DCT blocks.
+        original_features (list of int): Restored robust features.
+        selected_bands (list): Selected frequency bands.
 
     Returns:
-        restored_dct (list of numpy.ndarray): Восстановленные DCT-блоки.
+        restored_dct (list of numpy.ndarray): Restored DCT blocks.
     """
-    restored_dct = quantized_dct.copy()
+    restored_dct = [block.copy() for block in quantized_dct]
     for i, block in enumerate(restored_dct):
         if i < len(original_features):
             feature_value = original_features[i]
-            for band_index, (u, v) in enumerate(selected_bands):
-                if band_index == 0:
-                    block[u, v] = np.clip(feature_value, -127, 127)  # Ограничиваем значения
+            step = feature_value // len(selected_bands)  # Spread correction evenly
+            for u, v in selected_bands:
+                block[u, v] = np.clip(block[u, v] - step, -127, 127)
     return restored_dct
 
 def reconstruct_original_image(watermarked_image_path, metadata_path, output_image_path, extracted_watermark_path):
@@ -466,7 +476,7 @@ if __name__ == "__main__":
         watermark_image_path="watermark.jpg",
         output_image_path="watermarked.jpg",
         metadata_path="metadata.json",
-        threshold_t=21,
+        threshold_t=5,
         num_bands=10,
         key_s=np.random.permutation(10)
     )
