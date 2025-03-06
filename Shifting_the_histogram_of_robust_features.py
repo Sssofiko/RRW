@@ -1,5 +1,5 @@
-import numpy as np
-from Review_of_JPEG_compression import zigzag_scan, inverse_zigzag_scan
+from Constructing_robust_features import *
+import matplotlib.pyplot as plt
 
 def compute_t_r(T, R):
     """
@@ -13,119 +13,250 @@ def compute_t_r(T, R):
         t[r] = int(np.floor((T + r) / R)) * ((-1) ** r)
     return t
 
-def invert_permutation(perm):
-    """
-    Вычисляет обратную перестановку для заданного массива индексов.
-    Принимает 1D-массив perm с числами от 1 до N и возвращает массив обратной перестановки.
-    """
-    inverse = np.empty_like(perm)
-    perm0 = perm - 1  # перевод в 0-индексацию
-    for i, p in enumerate(perm0):
-        inverse[p] = i
-    return inverse
 
-def apply_integer_transformation(cells, watermark_bits, T, key):
+def compute_shifted_cell(cell, w, t_r):
     """
-    Применяет целочисленную трансформацию (формула (12)) для встраивания бита водяного знака.
+    Вычисляет водяную версию исходной ячейки cell для данного параметра t_r
+    и битового значения w (0 или 1) для этой ячейки.
 
     Параметры:
-      cells         - numpy.array размера (R, L, m, n): ячейки, полученные из выбранной частотной матрицы
-      watermark_bits- массив длины L с битами водяного знака (0 или 1)
-      T             - пороговое значение
-      key           - приватный ключ (перестановка) размера (m*n,), содержащий числа от 1 до m*n
+      cell: np.array размера (m, n) – исходная ячейка.
+      w: целое число (0 или 1) – бит водяного знака для данной ячейки.
+      t_r: целое число, параметр для данной частотной полосы.
 
-    Алгоритм:
-      Для каждой полосы r = 0,..., R-1 и для каждой ячейки k = 0,..., L-1:
-        1. Преобразует ячейку (m×n) в 1D-вектор.
-        2. Переставляет элементы согласно key.
-        3. Для каждого элемента с индексом epsilon (1-индексация, e = epsilon+1):
-             если e нечётное:
-               new_val = x + (2w(k)-1) * floor((t_r + e - 1)/(m*n))
-             если e чётное:
-               new_val = x - (2w(k)-1) * floor((t_r + e - 1)/(m*n))
-        4. Инвертирует перестановку, чтобы вернуть элементы в исходный порядок.
+    Возвращает:
+      shifted_cell: np.array размера (m, n), представляющая водяную версию исходной ячейки cell.
+    """
+    m, n = cell.shape
+    total = m * n
+    # Приводим ячейку к вектору в порядке строки (row-major)
+    flat = cell.flatten()
+    # Создаем индексы от 0 до total-1
+    eps = np.arange(total)
+    # Вычисляем сдвиг для каждого элемента: floor((t_r + eps) / (m*n))
+    shifts = np.floor((t_r + eps) / total).astype(int)
+    # Фактор зависит от бита: (2*w - 1) будет равен +1, если w==1, и -1, если w==0.
+    factor = 2 * w - 1
+    # Для элементов, где (eps+1) нечётное, прибавляем; для чётных – вычитаем.
+    odd_mask = ((eps + 1) % 2 == 1)
+    flat_shifted = np.empty_like(flat)
+    flat_shifted[odd_mask] = flat[odd_mask] + factor * shifts[odd_mask]
+    flat_shifted[~odd_mask] = flat[~odd_mask] - factor * shifts[~odd_mask]
+    # Приводим обратно к матричной форме
+    return flat_shifted.reshape(m, n)
+
+
+def compute_shifted_cells(cells, w, T, R):
+    """
+    Применяет преобразование (вычисление x̃ₖᵣ(φₑ)) для всех ячеек во всех выбранных частотных полосах.
+
+    Параметры:
+      cells: np.array размера (R, L, m, n) – исходные ячейки, полученные из коэффициентов выбранных полос.
+      w: np.array размера (L,) – вектор битов водяного знака для каждой ячейки (значения 0 или 1).
+      T: целое число – порог, выбранный для встраивания (должно выполняться T > max(|λ(k)|)).
+      R: целое число – число выбранных частотных полос.
+
+    Возвращает:
+      shifted_cells: np.array размера (R, L, m, n) – массив ячеек после применения целочисленного преобразования.
+    """
+    t = compute_t_r(T, R)  # вычисляем вектор параметров t для каждой полосы, размер R
+    R_val, L, m, n = cells.shape
+    shifted_cells = np.empty_like(cells)
+    for r in range(R_val):
+        for k in range(L):
+            shifted_cells[r, k] = compute_shifted_cell(cells[r, k], w[k], t[r])
+    return shifted_cells
+
+
+# Функция, обратная divide_into_cells
+def merge_cells(cells, cell_height, cell_width, M, N):
+    """
+    Восстанавливает исходную матрицу из ячеек, полученных функцией divide_into_cells.
+
+    Параметры:
+      cells: np.array размера (R, L, cell_height, cell_width),
+             где R – число выбранных частотных полос,
+                   L – общее число ячеек (L = (M//cell_height) * (N//cell_width)),
+                   cell_height, cell_width – размеры каждой ячейки.
+      M: итоговое число строк восстановленной матрицы (например, M = (число ячеек по вертикали)*cell_height).
+      N: итоговое число столбцов восстановленной матрицы (например, N = (число ячеек по горизонтали)*cell_width).
+
+    Возвращает:
+      freq_matrix: np.array размера (R, M, N) – восстановленная матрица, которая соответствует
+                   исходной матрице, разделённой функцией divide_into_cells.
     """
     R, L, m, n = cells.shape
-    total = m * n
-    t = compute_t_r(T, R)  # t_r для каждой полосы
-    inv_key = invert_permutation(key)
-    watermarked_cells = np.empty_like(cells)
+    num_cells_vertical = M // cell_height
+    num_cells_horizontal = N // cell_width
 
+    freq_matrix = np.empty((R, M, N), dtype=cells.dtype)
     for r in range(R):
-        for k in range(L):
-            cell = cells[r, k].flatten()
-            permuted = cell[key - 1].copy()
-            for epsilon in range(total):
-                e = epsilon + 1  # 1-индексация
-                step = int(np.floor((t[r] + e - 1) / total))
-                if e % 2 == 1:
-                    permuted[epsilon] = permuted[epsilon] + (2 * watermark_bits[k] - 1) * step
-                else:
-                    permuted[epsilon] = permuted[epsilon] - (2 * watermark_bits[k] - 1) * step
-            new_cell_flat = np.empty(total, dtype=permuted.dtype)
-            new_cell_flat[inv_key] = permuted
-            watermarked_cells[r, k] = new_cell_flat.reshape(m, n)
-    return watermarked_cells
+        cell_index = 0
+        for i in range(0, num_cells_vertical * cell_height, cell_height):
+            for j in range(0, num_cells_horizontal * cell_width, cell_width):
+                freq_matrix[r, i:i + cell_height, j:j + cell_width] = cells[r, cell_index]
+                cell_index += 1
+    return freq_matrix
 
-def compute_cell_difference_statistics(cells, key):
-    """
-    Вычисляет разностную статистику для каждой ячейки по формуле (10):
-      η_r(k) = sum_{ε=1}^{m*n} (-1)^(ε-1) * x_k^r(φ_ε)
-    """
-    R, L, m, n = cells.shape
-    total = m * n
-    key0 = key - 1
-    eta = np.zeros((R, L), dtype=int)
-    for r in range(R):
-        for k in range(L):
-            cell = cells[r, k].flatten()
-            permuted = cell[key0]
-            stat = sum(((-1) ** epsilon) * permuted[epsilon] for epsilon in range(total))
-            eta[r, k] = stat
-    return eta
 
-def compute_watermarked_robust_features(eta_hat):
+# Функция, обратная extract_frequency_matrices
+def replace_frequency_matrices_in_blocks(blocks, freq_matrices, selected_bands, M, N):
     """
-    Вычисляет итоговый водяной надежный признак для каждой группы ячеек по формуле (11):
-      õλ(k) = sum_{r=1}^{R} (-1)^(r-1) * õη_r(k)
-    """
-    R, L = eta_hat.shape
-    weights = np.array([(-1) ** r for r in range(R)])
-    robust_features = np.sum(eta_hat * weights[:, None], axis=0)
-    return robust_features
+    Заменяет в оригинальных 8×8 блоках коэффициенты в выбранных частотных полосах на значения из freq_matrices.
+    Остальные коэффициенты остаются без изменений.
 
-def shift_histogram_pipeline(cells, watermark_bits, T, key):
-    """
-    Встраивает водяной знак посредством сдвига гистограммы надежных признаков.
+    Параметры:
+      blocks: np.array размера (M*N, 8, 8) – исходные блоки квантованных DCT коэффициентов.
+      freq_matrices: np.array размера (R, M, N) – матрицы, где R = число выбранных полос.
+                     Для каждого блока в позиции (i, j) матрицы содержит водяное значение для этой полосы.
+      selected_bands: список номеров полос (от 1 до 64), выбранных согласно зигзаг-обходу.
+      M: число блоков по вертикали (например, image_height // 8).
+      N: число блоков по горизонтали (например, image_width // 8).
 
-    Алгоритм:
-      1. Применяет целочисленную трансформацию к каждой ячейке (формулы (12) и (13)).
-      2. Вычисляет модифицированные разностные статистики (формула (10)).
-      3. Объединяет статистики по формуле (11) для получения итогового watermarked robust feature.
+    Возвращает:
+      modified_blocks: np.array размера (M*N, 8, 8) – блоки с заменёнными значениями для выбранных частотных полос.
     """
-    watermarked_cells = apply_integer_transformation(cells, watermark_bits, T, key)
-    eta_hat = compute_cell_difference_statistics(watermarked_cells, key)
-    watermarked_robust_feat = compute_watermarked_robust_features(eta_hat)
-    return watermarked_cells, watermarked_robust_feat
+    # Создаем копию исходных блоков, чтобы не изменять оригинал
+    modified_blocks = blocks.copy()
+    # Получаем список координат по зигзаг-обходу для 8×8 блока
+    zigzag = zigzag_indices(n=8)
 
-def update_quantized_dct_coefficients(quantized_blocks, freq_matrices, watermarked_cells, selected_bands, M, N):
-    """
-    Обновляет квантованные DCT коэффициенты для каждого блока по формуле (15):
-      если f = σ_r, то d̂_{i,j}(f) = watermarked значение,
-      иначе d̂_{i,j}(f) остаётся без изменений.
-    """
-    updated_blocks = quantized_blocks.copy()
-    R = len(selected_bands)
+    # Для каждой выбранной частотной полосы r
+    for r, band in enumerate(selected_bands):
+        # Определяем координаты (i, j) в блоке, соответствующие этой полосе (нумерация 1-64)
+        i_coord, j_coord = zigzag[band - 1]
+        # Проходим по всем блокам (расположенным в сетке размера M x N)
+        for i in range(M):
+            for j in range(N):
+                block_idx = i * N + j
+                # Заменяем коэффициент в позиции (i_coord, j_coord)
+                modified_blocks[block_idx, i_coord, j_coord] = freq_matrices[r, i, j]
+
+    return modified_blocks
+
+
+# Пример применения:
+if __name__ == "__main__":
+    # Допустим, у нас есть изображение с размерами 512x512
+    # Число блоков: M = 512 // 8 = 64, N = 512 // 8 = 64
+    M = 512 // 8  # 64 блока по вертикали
+    N = 512 // 8  # 64 блока по горизонтали
     num_blocks = M * N
-    updated_blocks_zigzag = []
-    for idx in range(num_blocks):
-        block = updated_blocks[idx]
-        block_zigzag = zigzag_scan(block)
-        i = idx // N
-        j = idx % N
-        for r in range(R):
-            block_zigzag[selected_bands[r] - 1] = watermarked_cells[r, i * N + j]
-        updated_block = inverse_zigzag_scan(block_zigzag)
-        updated_blocks_zigzag.append(updated_block)
-    updated_blocks_zigzag = np.array(updated_blocks_zigzag)
-    return updated_blocks_zigzag
+
+    # Создадим псевдо-блоки (8×8) с целочисленными значениями, имитирующими квантованные DCT коэффициенты
+    blocks = np.random.randint(-20, 20, (num_blocks, 8, 8))
+    # Выбранные частотные полосы: R = 3, {13, 11, 20}
+    selected_bands = [13, 11, 20]
+
+    freq_matrices = extract_frequency_matrices(blocks, selected_bands, M, N)
+    # три матрицы каждая из которых имеет размеры 64x64, как и расположение блоков в изображении.
+
+    # Задаём размеры ячейки
+    cell_height = 8  # высота ячейки (m)
+    cell_width = 4  # ширина ячейки (n)
+
+    # Число ячеек по вертикали: 64 // 8 = 8, по горизонтали: 64 // 4 = 16
+    # Итого L = 8 * 16 = 128 ячеек на каждую матрицу.
+    cells = divide_into_cells(freq_matrices, cell_height, cell_width)
+
+    key = generate_random_bijection(cell_height, cell_width)
+
+    # Вычисляем разностную статистику для каждой ячейки
+    eta = compute_difference_statistics(cells, key)
+
+    # Вычисляем робастный признак λ(k) для всех ячеек
+    robust_features = compute_robust_features(eta)
+
+    # Параметры примера
+    R = len(selected_bands)  # число выбранных частотных полос
+    L = M // cell_height * N // cell_width  # число ячеек в каждой матрице
+    T = np.max(np.abs(robust_features)) + 1  # порог, соответствующий условию T > max(|λ(k)|)
+    print(f'порог: {T}')
+
+    # Случайно зададим биты водяного знака для каждой ячейки (0 или 1)
+    w = np.random.randint(0, 2, size=(L,))
+
+    print(f'водяной знак: {w[12]}')
+
+    # print("Исходные ячейки (для каждой частотной полосы, L ячеек):")
+    # for r in range(R):
+    #     print(f"Полоса {r}:")
+    #     print(cells[r])
+    # print("\nБиты водяного знака для ячеек (w):")
+    # print(w)
+
+    # Вычисляем водяные ячейки
+    wm_cells = compute_shifted_cells(cells, w, T, R)
+
+    # print("\nЯчейки после применения целочисленного преобразования (x̃):")
+    # for r in range(R):
+    #     print(f"Полоса {r}:")
+    #     print(shifted[r])
+
+    wm_freq_matrices = merge_cells(wm_cells, cell_height, cell_width, M, N)
+
+    wm_blocks = replace_frequency_matrices_in_blocks(blocks, wm_freq_matrices, selected_bands, M, N)
+
+    # M = 512 // 8
+    # N = 512 // 8
+    # num_blocks = M * N
+    #
+    # # Исходные (псевдо)блоки квантованных DCT коэффициентов
+    # blocks = np.random.randint(-20, 20, (num_blocks, 8, 8))
+    # selected_bands = [13, 11, 20]
+    #
+    # # Извлекаем матрицы частот
+    # freq_matrices = extract_frequency_matrices(blocks, selected_bands, M, N)
+    #
+    # cell_height = 8
+    # cell_width = 4
+    # cells = divide_into_cells(freq_matrices, cell_height, cell_width)
+    #
+    # # Генерируем случайный ключ (биекцию)
+    # key = generate_random_bijection(cell_height, cell_width)
+    #
+    # # Считаем разностную статистику до встраивания
+    # eta_before = compute_difference_statistics(cells, key)
+    # robust_features_before = compute_robust_features(eta_before)
+    #
+    # # Определяем порог T
+    # T = np.max(np.abs(robust_features_before)) + 1
+    #
+    # # Генерируем случайные биты водяного знака
+    # L = (M // cell_height) * (N // cell_width)
+    # w = np.random.randint(0, 2, size=(L,))
+    #
+    # R = len(selected_bands)
+    #
+    # # Выполняем целочисленное преобразование (встраивание)
+    # wm_cells = compute_shifted_cells(cells, w, T, R)
+    #
+    # # Чтобы посмотреть, что получилось, пересчитаем робастные признаки после встраивания
+    # eta_after = compute_difference_statistics(wm_cells, key)
+    # robust_features_after = compute_robust_features(eta_after)
+    #
+    # # --- ПОСТРОЕНИЕ ГИСТОГРАММ ---
+    #
+    # plt.figure(figsize=(12, 5))
+    #
+    # # (a) Гистограмма робастных признаков до внедрения
+    # plt.subplot(1, 2, 1)
+    # plt.hist(robust_features_before, bins=30, color='orange')
+    # plt.title("Histogram before watermarking")
+    # plt.xlabel("Value")
+    # plt.ylabel("Count")
+    #
+    # # (b) Гистограмма робастных признаков после внедрения
+    # #    Покажем отрицательные и положительные значения разными цветами
+    # plt.subplot(1, 2, 2)
+    # neg_vals = robust_features_after[robust_features_after < 0]
+    # pos_vals = robust_features_after[robust_features_after >= 0]
+    # plt.hist(neg_vals, bins=30, color='red', alpha=0.5, label='bit-0-region')
+    # plt.hist(pos_vals, bins=30, color='blue', alpha=0.5, label='bit-1-region')
+    # plt.title("Histogram after watermarking")
+    # plt.xlabel("Value")
+    # plt.ylabel("Count")
+    # plt.legend()
+    #
+    # plt.tight_layout()
+    # plt.show()
