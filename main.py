@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from Embedding_extraction import embed_watermark, extract_watermark  # Импортируем только необходимую функцию
 from Constructing_robust_features import generate_random_bijection
 from quality import mse, psnr, rmse, ssim, robustness
-
+from Review_of_JPEG_compression import jpeg_compression_pipeline
 
 def get_cell_size_input():
     """
@@ -65,17 +65,27 @@ def get_watermark_path_and_check_size(cell_height, cell_width):
         else:
             print("\n❌ Файл не существует. Пожалуйста, проверьте путь.")
 
-
 def get_selected_bands():
     """
     Запрашивает у пользователя полосы для DCT и проверяет корректность ввода.
+    В результате создается список selected_bands, где каждый элемент
+    - это 64 минус номер полосы, введенный пользователем.
     """
     while True:
         try:
-            selected_bands = list(map(int, input("\nВведите полосы (например, 11 12 13): ").split()))
-            return selected_bands
+            # Получаем список полос, введённых пользователем
+            input_bands = list(map(int, input("\nВведите полосы (например, 11 12 13): ").split()))
+
+            # Проверяем, что все полосы находятся в допустимом диапазоне
+            if all(1 <= band <= 64 for band in input_bands):
+                # Для каждой введённой полосы вычисляем 64 - band
+                selected_bands = [64 - band for band in input_bands]
+                print(f"Выбранные полосы: {input_bands}")
+                return selected_bands, input_bands
+            else:
+                print("\n❌ Ошибка: все полосы должны быть в диапазоне от 1 до 64. Пожалуйста, попробуйте снова.")
         except ValueError:
-            print("\n❌ Неверный формат ввода. Пожалуйста, введите полосы через пробел.")
+            print("\n❌ Неверный формат ввода. Пожалуйста, введите числа через пробел.")
 
 
 def get_key_input(cell_height, cell_width):
@@ -142,7 +152,7 @@ def embed_watermark_to_image():
     watermark_path, watermark_size = get_watermark_path_and_check_size(cell_height, cell_width)
 
     # Шаг 4: Ввод полос
-    selected_bands = get_selected_bands()
+    selected_bands, input_bands = get_selected_bands()
 
     # Шаг 5: Ввод ключа
     key = get_key_input(cell_height, cell_width)
@@ -153,11 +163,11 @@ def embed_watermark_to_image():
         watermark_path=watermark_path,
         block_size=8,
         selected_bands=selected_bands,
+        input_bands=input_bands,
         cell_height=cell_height,
         cell_width=cell_width,
         key=key  # Передаём ключ
     )
-
     # Шаг 7: Сохранение изображения
     save_path = input(
         "\nВведите имя для сохранения изображения с водяным знаком (по умолчанию 'watermarked_image.jpg'): ").strip()
@@ -191,6 +201,7 @@ def embed_watermark_to_image():
 
     if compare_images == 'да':
         # Загружаем исходное изображение для сравнения
+        # original_img = jpeg_compression_pipeline(image_path)
         original_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
         # Отображаем оба изображения рядом
@@ -270,7 +281,7 @@ def extract_watermark_from_image():
     cell_height, cell_width = get_cell_size_input()
 
     # Шаг 3: Ввод полос
-    selected_bands = get_selected_bands()
+    selected_bands, _ = get_selected_bands()
 
     # Шаг 4: Ввод ключа
     key = get_key_input_for_extraction(cell_height, cell_width)
@@ -340,6 +351,7 @@ def evaluate_quality():
 
     # Загружаем все изображения
     original_img = cv2.imread(original_img_path, cv2.IMREAD_GRAYSCALE)
+    # original_img = jpeg_compression_pipeline(image_path)
     watermarked_img = cv2.imread(watermarked_img_path, cv2.IMREAD_GRAYSCALE)
     original_watermark = cv2.imread(original_watermark_path, cv2.IMREAD_GRAYSCALE)
     extracted_watermark = cv2.imread(extracted_watermark_path, cv2.IMREAD_GRAYSCALE)

@@ -2,8 +2,10 @@ import numpy as np
 import cv2
 from scipy.fftpack import dct, idct
 import heapq
+import matplotlib.pyplot as plt
 
 # --- Стандартная матрица квантования для яркостного канала JPEG ---
+# --- Матрица квантования с более высокими значениями ---
 JPEG_QUANT_MATRIX = np.array([
     [16, 11, 10, 16, 24, 40, 51, 61],
     [12, 12, 14, 19, 26, 58, 60, 55],
@@ -14,6 +16,7 @@ JPEG_QUANT_MATRIX = np.array([
     [49, 64, 78, 87, 103, 121, 120, 101],
     [72, 92, 95, 98, 112, 100, 103, 99]
 ], dtype=np.float32)
+
 
 # --- Функции для разбиения и обратной сборки блоков ---
 def split_into_blocks(img, block_size=8):
@@ -35,6 +38,7 @@ def merge_blocks(blocks, img_shape, block_size=8):
 # --- Функции для DCT, квантования, деквантования и IDCT ---
 def apply_dct(blocks):
     return np.array([dct(dct(block.T, norm='ortho').T, norm='ortho') for block in blocks])
+
 
 def quantize(blocks, quant_matrix):
     return np.round(blocks / quant_matrix).astype(int)
@@ -180,4 +184,37 @@ def jpeg_compression_pipeline(image_path):
     recovered_quantized_blocks = [inverse_zigzag_scan(block) for block in decoded_zigzag_blocks]
     dequantized_blocks = dequantize(np.array(recovered_quantized_blocks), JPEG_QUANT_MATRIX)
     reconstructed_blocks = apply_idct(dequantized_blocks)
+    cv2.imwrite("1.jpg", merge_blocks(reconstructed_blocks, img.shape))
     return merge_blocks(reconstructed_blocks, img.shape)
+
+def main():
+    """
+    Основная функция для вывода изображения до и после сжатия.
+    """
+    image_path = "Lena.jpg"
+
+    img_after_dct = jpeg_compression_pipeline(image_path)
+
+    original_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+
+    # Выводим исходное и обработанное изображения
+    plt.figure(figsize=(12, 6))
+
+    # Исходное изображение
+    plt.subplot(1, 3, 1)
+    plt.imshow(original_img, cmap='gray')
+    plt.title("Исходное изображение")
+    plt.axis('off')
+
+    # Изображение после DCT
+    plt.subplot(1, 3, 2)
+    plt.imshow(img_after_dct, cmap='gray')
+    plt.title("После DCT")
+    plt.axis('off')
+
+
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == "__main__":
+    main()
