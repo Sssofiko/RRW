@@ -65,7 +65,7 @@ def perform_experiment(image_paths, watermark_path, input_bands):
 
 def main():
     # Пути к изображениям и водяному знаку
-    image_paths = ["Lena.jpg", "Boats.jpg", "Airplane.jpg"]
+    image_paths = ["Lena.jpg", "Boats.jpg", "Airplane.jpg", "Goldhill.jpg"]
     watermark_path = "bk.jpg"
 
     # Варианты выбранных полос
@@ -76,7 +76,7 @@ def main():
     ]
 
     # Настройка вывода для каждого изображения
-    fig, axes = plt.subplots(3, 4, figsize=(12, 10))
+    fig, axes = plt.subplots(4, 4, figsize=(12, 10))
 
     # Вставка изображений в соответствии с выбранными полосами
     for i, selected_bands in enumerate(selected_bands_list):

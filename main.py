@@ -79,7 +79,7 @@ def get_selected_bands():
             # Проверяем, что все полосы находятся в допустимом диапазоне
             if all(1 <= band <= 64 for band in input_bands):
                 # Для каждой введённой полосы вычисляем 64 - band
-                selected_bands = [64 - band for band in input_bands]
+                selected_bands = [band for band in input_bands]
                 print(f"Выбранные полосы: {input_bands}")
                 return selected_bands, input_bands
             else:

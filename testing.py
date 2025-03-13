@@ -16,13 +16,12 @@ from Constructing_robust_features import (
 from Shifting_the_histogram_of_robust_features import (
     merge_cells,
     replace_frequency_matrices_in_blocks,
+    compute_t_r,
+    compute_shifted_cell,
     compute_shifted_cells
 )
 from Review_of_JPEG_compression import (
-    split_into_blocks, merge_blocks,
-    apply_dct, apply_idct,
-    quantize, dequantize,
-    JPEG_QUANT_MATRIX
+    split_into_blocks, merge_blocks
 )
 
 
@@ -30,98 +29,98 @@ from Review_of_JPEG_compression import (
 # Симметричный сдвиг: упрощённая версия
 #############################################
 
-# def compute_shifted_cell_symmetric(cell, w, T):
-#     """
-#     Для данной ячейки (размер m x n) выполняется симметричный сдвиг коэффициентов:
-#       Если рассматривать элементы с индексами ε = 1,..., m*n, то:
-#       для нечётных ε: x̃[ε] = x[ε] + (2*w-1) * floor((T + ε - 1) / (m*n))
-#       для чётных  ε: x̃[ε] = x[ε] - (2*w-1) * floor((T + ε - 1) / (m*n))
-#
-#     Для R=1, t_1 = T.
-#     """
-#     # m, n = cell.shape
-#     # total = m * n
-#     # # Приводим ячейку к вектору (row-major)
-#     # flat = cell.flatten().astype(np.int32)
-#     # # Индексы ε от 1 до total (т.е. np.arange(total)+1)
-#     # eps = np.arange(total)+1
-#     # # Вычисляем сдвиги для каждого элемента
-#     # shifts = np.floor((T + eps - 1) / total).astype(int)
-#     # # Фактор: +1, если w==1, -1, если w==0
-#     # factor = 2 * w - 1
-#     # # Для нечётных индексов (eps нечётное) прибавляем, для чётных – вычитаем
-#     # odd_mask = (eps % 2 == 1)
-#     # flat_shifted = np.empty_like(flat)
-#     # flat_shifted[odd_mask] = flat[odd_mask] + factor * shifts[odd_mask]
-#     # flat_shifted[~odd_mask] = flat[~odd_mask] - factor * shifts[~odd_mask]
-#     #
-#     # return flat_shifted.reshape(m, n)
-#
-#     # m, n = cell.shape
-#     # total = m * n
-#     # # Приводим ячейку к вектору (row-major)
-#     # flat = cell.flatten().astype(np.int32)
-#     # # Индексы ε от 1 до total (т.е. np.arange(total)+1)
-#     # eps = np.arange(total)
-#     # # Вычисляем сдвиги для каждого элемента
-#     # shifts = np.floor((T + eps - 1) / total).astype(int)
-#     # # Фактор: +1, если w==1, -1, если w==0
-#     # factor = 2 * w - 1
-#     # # Для нечётных индексов (eps нечётное) прибавляем, для чётных – вычитаем
-#     # odd_mask = (eps % 2 == 1)
-#     # flat_shifted = np.empty_like(flat)
-#     # flat_shifted[odd_mask] = flat[odd_mask] + factor * shifts[odd_mask]
-#     # flat_shifted[~odd_mask] = flat[~odd_mask] - factor * shifts[~odd_mask]
-#     # # Вычисляем робастный признак до и после сдвига.
-#     # # Здесь s[i] = +1, если i (0-индекс) чётное, и -1, если нечётное.
-#     # signs = np.array([1 if i % 2 == 0 else -1 for i in range(total)])
-#     # original_feature = np.sum(flat * signs)
-#     # shifted_feature = np.sum(flat_shifted * signs)
-#     # delta = shifted_feature - original_feature
-#     # # Желаемое изменение: +T если w==1, -T если w==0.
-#     # desired = T if w == 1 else -T
-#     # diff = desired - delta
-#     #
-#     # # Корректируем один элемент так, чтобы итоговый робастный признак изменился ровно на diff.
-#     # # При корректировке элемента с индексом i изменение робастного признака составит: adjustment * signs[i].
-#     # # Чтобы компенсировать diff, выберем i такое, чтобы скорректировать с минимальным искажением.
-#     # # Например, выбираем элемент, у которого уже произведённое изменение (|flat_shifted - flat|) минимально.
-#     # modification = np.abs(flat_shifted - flat)
-#     # idx = np.argmin(modification)
-#     # # Корректировка: мы хотим, чтобы signs[idx] * (adjustment) = diff, т.е.
-#     # adjustment = diff * (1 if signs[idx] > 0 else -1)
-#     # flat_shifted[idx] += adjustment
-#     #
-#     # # (Опционально можно проверить, что итоговое изменение точно соответствует)
-#     # new_feature = np.sum(flat_shifted * signs)
-#     # # Если new_feature != original_feature + desired, можно добавить небольшое округление
-#     # # assert new_feature == original_feature + desired, "Ошибка: робастный признак не соответствует целевому изменению"
-#
-#     # return flat_shifted.reshape(m, n)
-#
-#     m, n = cell.shape
-#     total = m * n
-#     signs = np.array([1 if i % 2 == 0 else -1 for i in range(total)])
-#     flat = cell.flatten()
-#     lambda_orig = np.sum(flat * signs)
-#     d = T if w == 1 else -T  # желаемое изменение
-#     flat[0] += d
-#     return flat.reshape(m, n)
-#
-#
-# def compute_shifted_cells_symmetric(cells, w_bits, T, R):
-#     """
-#     Применяет симметричный сдвиг для всех ячеек во всех выбранных частотных полосах,
-#     используя compute_shifted_cell_symmetric.
-#     Параметр R здесь задаёт число выбранных полос.
-#     """
-#     t = compute_t_r(T, R)
-#     R_val, L, m, n = cells.shape  # R_val должно совпадать с len(selected_bands)
-#     shifted_cells = np.empty_like(cells)
-#     for r in range(R_val):
-#         for k in range(L):
-#             shifted_cells[r, k] = compute_shifted_cell_symmetric(cells[r, k], w_bits[k], t[r])
-#     return shifted_cells
+def compute_shifted_cell_symmetric(cell, w, T):
+    """
+    Для данной ячейки (размер m x n) выполняется симметричный сдвиг коэффициентов:
+      Если рассматривать элементы с индексами ε = 1,..., m*n, то:
+      для нечётных ε: x̃[ε] = x[ε] + (2*w-1) * floor((T + ε - 1) / (m*n))
+      для чётных  ε: x̃[ε] = x[ε] - (2*w-1) * floor((T + ε - 1) / (m*n))
+
+    Для R=1, t_1 = T.
+    """
+    # m, n = cell.shape
+    # total = m * n
+    # # Приводим ячейку к вектору (row-major)
+    # flat = cell.flatten().astype(np.int32)
+    # # Индексы ε от 1 до total (т.е. np.arange(total)+1)
+    # eps = np.arange(total)+1
+    # # Вычисляем сдвиги для каждого элемента
+    # shifts = np.floor((T + eps - 1) / total).astype(int)
+    # # Фактор: +1, если w==1, -1, если w==0
+    # factor = 2 * w - 1
+    # # Для нечётных индексов (eps нечётное) прибавляем, для чётных – вычитаем
+    # odd_mask = (eps % 2 == 1)
+    # flat_shifted = np.empty_like(flat)
+    # flat_shifted[odd_mask] = flat[odd_mask] + factor * shifts[odd_mask]
+    # flat_shifted[~odd_mask] = flat[~odd_mask] - factor * shifts[~odd_mask]
+    #
+    # return flat_shifted.reshape(m, n)
+
+    # m, n = cell.shape
+    # total = m * n
+    # # Приводим ячейку к вектору (row-major)
+    # flat = cell.flatten().astype(np.int32)
+    # # Индексы ε от 1 до total (т.е. np.arange(total)+1)
+    # eps = np.arange(total)
+    # # Вычисляем сдвиги для каждого элемента
+    # shifts = np.floor((T + eps - 1) / total).astype(int)
+    # # Фактор: +1, если w==1, -1, если w==0
+    # factor = 2 * w - 1
+    # # Для нечётных индексов (eps нечётное) прибавляем, для чётных – вычитаем
+    # odd_mask = (eps % 2 == 1)
+    # flat_shifted = np.empty_like(flat)
+    # flat_shifted[odd_mask] = flat[odd_mask] + factor * shifts[odd_mask]
+    # flat_shifted[~odd_mask] = flat[~odd_mask] - factor * shifts[~odd_mask]
+    # # Вычисляем робастный признак до и после сдвига.
+    # # Здесь s[i] = +1, если i (0-индекс) чётное, и -1, если нечётное.
+    # signs = np.array([1 if i % 2 == 0 else -1 for i in range(total)])
+    # original_feature = np.sum(flat * signs)
+    # shifted_feature = np.sum(flat_shifted * signs)
+    # delta = shifted_feature - original_feature
+    # # Желаемое изменение: +T если w==1, -T если w==0.
+    # desired = T if w == 1 else -T
+    # diff = desired - delta
+    #
+    # # Корректируем один элемент так, чтобы итоговый робастный признак изменился ровно на diff.
+    # # При корректировке элемента с индексом i изменение робастного признака составит: adjustment * signs[i].
+    # # Чтобы компенсировать diff, выберем i такое, чтобы скорректировать с минимальным искажением.
+    # # Например, выбираем элемент, у которого уже произведённое изменение (|flat_shifted - flat|) минимально.
+    # modification = np.abs(flat_shifted - flat)
+    # idx = np.argmin(modification)
+    # # Корректировка: мы хотим, чтобы signs[idx] * (adjustment) = diff, т.е.
+    # adjustment = diff * (1 if signs[idx] > 0 else -1)
+    # flat_shifted[idx] += adjustment
+    #
+    # # (Опционально можно проверить, что итоговое изменение точно соответствует)
+    # new_feature = np.sum(flat_shifted * signs)
+    # # Если new_feature != original_feature + desired, можно добавить небольшое округление
+    # # assert new_feature == original_feature + desired, "Ошибка: робастный признак не соответствует целевому изменению"
+
+    # return flat_shifted.reshape(m, n)
+
+    m, n = cell.shape
+    total = m * n
+    signs = np.array([1 if i % 2 == 0 else -1 for i in range(total)])
+    flat = cell.flatten()
+    lambda_orig = np.sum(flat * signs)
+    d = T if w == 1 else -T  # желаемое изменение
+    flat[0] += d
+    return flat.reshape(m, n)
+
+
+def compute_shifted_cells_symmetric(cells, w_bits, T, R):
+    """
+    Применяет симметричный сдвиг для всех ячеек во всех выбранных частотных полосах,
+    используя compute_shifted_cell_symmetric.
+    Параметр R здесь задаёт число выбранных полос.
+    """
+    t = compute_t_r(T, R)
+    R_val, L, m, n = cells.shape  # R_val должно совпадать с len(selected_bands)
+    shifted_cells = np.empty_like(cells)
+    for r in range(R_val):
+        for k in range(L):
+            shifted_cells[r, k] = compute_shifted_cell_symmetric(cells[r, k], w_bits[k], t[r])
+    return shifted_cells
 
 
 #############################################
@@ -151,13 +150,13 @@ def embed_watermark(cover_path=None, watermark_path=None,
 
     # Разбиение на 8x8 блоки, DCT и квантование
     blocks = split_into_blocks(cover_img, block_size=block_size)
-    dct_blocks = apply_dct(blocks)
-    quantized_blocks = quantize(dct_blocks, JPEG_QUANT_MATRIX)
+    # dct_blocks = apply_dct(blocks)
+    # quantized_blocks = quantize(dct_blocks, JPEG_QUANT_MATRIX)
     M = h // block_size
     N = w // block_size
 
     # Извлечение коэффициентов выбранных полос (например, [11] или [10,11,12])
-    freq_matrices = extract_frequency_matrices(quantized_blocks, selected_bands, M, N)
+    freq_matrices = extract_frequency_matrices(blocks, selected_bands, M, N)
     cells = divide_into_cells(freq_matrices, cell_height, cell_width)
     R = len(selected_bands)  # число выбранных частотных полос
 
@@ -178,8 +177,8 @@ def embed_watermark(cover_path=None, watermark_path=None,
     else:
         watermark_bits = wmk_bits
 
-    # Фиксируем глобальную полярность: первый бит равен 1
-    watermark_bits[0] = 1
+    # # Фиксируем глобальную полярность: первый бит равен 1
+    # watermark_bits[0] = 1
     # Определение порога T: выбираем T так, чтобы T > max(|λ|) для обратимости
     T = np.max(np.abs(robust_features_before)) + 1
     print(T)
@@ -204,13 +203,19 @@ def embed_watermark(cover_path=None, watermark_path=None,
     wm_cells = compute_shifted_cells(cells, watermark_bits, T, R)
     wm_freq_matrices = merge_cells(wm_cells, cell_height, cell_width, M, N)
     wm_quantized_blocks = replace_frequency_matrices_in_blocks(
-        quantized_blocks, wm_freq_matrices, selected_bands, M, N
+        blocks, wm_freq_matrices, selected_bands, M, N
     )
 
     # Обратное квантование, IDCT и сборка итогового изображения
-    wm_dct_blocks = dequantize(wm_quantized_blocks, JPEG_QUANT_MATRIX)
-    wm_spatial_blocks = apply_idct(wm_dct_blocks)
-    watermarked_img = merge_blocks(wm_spatial_blocks, cover_img.shape, block_size=block_size)
+    # wm_dct_blocks = dequantize(wm_quantized_blocks, JPEG_QUANT_MATRIX)
+    # wm_spatial_blocks = apply_idct(wm_dct_blocks)
+    watermarked_img = merge_blocks(wm_quantized_blocks, cover_img.shape, block_size=block_size)
+
+    # Дополнительно можно построить гистограммы робастных признаков до и после
+    # freq_matrices_after = extract_frequency_matrices(wm_quantized_blocks, selected_bands, M, N)
+    # cells_after = divide_into_cells(freq_matrices_after, cell_height, cell_width)
+    # eta_after = compute_difference_statistics(cells_after, key)
+    # robust_features_after = compute_robust_features(eta_after)
 
     # Предложение показать гистограммы
     show_histograms = input(
@@ -254,13 +259,13 @@ def extract_watermark(watermarked_img, cover_shape, block_size=8,
 
     # Разбиение, DCT, квантование
     blocks = split_into_blocks(wm_img, block_size=block_size)
-    dct_blocks = apply_dct(blocks)
-    quantized_blocks = quantize(dct_blocks, JPEG_QUANT_MATRIX)
+    # dct_blocks = apply_dct(blocks)
+    # quantized_blocks = quantize(dct_blocks, JPEG_QUANT_MATRIX)
     M = h // block_size
     N = w // block_size
 
     # Извлекаем коэффициенты выбранных полос и делим на ячейки
-    freq_matrices = extract_frequency_matrices(quantized_blocks, selected_bands, M, N)
+    freq_matrices = extract_frequency_matrices(blocks, selected_bands, M, N)
     cells = divide_into_cells(freq_matrices, cell_height, cell_width)
 
     # Вычисляем робастные признаки
@@ -292,13 +297,13 @@ def show_robust_features_histograms(cover_path=None, watermark_path=None,
 
     # Разбиение на 8x8 блоки, DCT и квантование
     blocks = split_into_blocks(cover_img, block_size=block_size)
-    dct_blocks = apply_dct(blocks)
-    quantized_blocks = quantize(dct_blocks, JPEG_QUANT_MATRIX)
+    # dct_blocks = apply_dct(blocks)
+    # quantized_blocks = quantize(dct_blocks, JPEG_QUANT_MATRIX)
     M = h // block_size
     N = w // block_size
 
     # Извлечение коэффициентов выбранных полос (например, [11] или [10,11,12])
-    freq_matrices = extract_frequency_matrices(quantized_blocks, selected_bands, M, N)
+    freq_matrices = extract_frequency_matrices(blocks, selected_bands, M, N)
     cells = divide_into_cells(freq_matrices, cell_height, cell_width)
     R = len(selected_bands)  # число выбранных частотных полос
 
@@ -325,16 +330,16 @@ def show_robust_features_histograms(cover_path=None, watermark_path=None,
     T = np.max(np.abs(robust_features_before)) + 1
 
     # Встраивание: симметричный сдвиг гистограмм робастных признаков
-    wm_cells = compute_shifted_cells(cells, watermark_bits, T, R)
+    wm_cells = compute_shifted_cells_symmetric(cells, watermark_bits, T, R)
     wm_freq_matrices = merge_cells(wm_cells, cell_height, cell_width, M, N)
     wm_quantized_blocks = replace_frequency_matrices_in_blocks(
-        quantized_blocks, wm_freq_matrices, selected_bands, M, N
+        blocks, wm_freq_matrices, selected_bands, M, N
     )
 
     # Обратное квантование, IDCT и сборка итогового изображения
-    wm_dct_blocks = dequantize(wm_quantized_blocks, JPEG_QUANT_MATRIX)
-    wm_spatial_blocks = apply_idct(wm_dct_blocks)
-    watermarked_img = merge_blocks(wm_spatial_blocks, cover_img.shape, block_size=block_size)
+    # wm_dct_blocks = dequantize(wm_quantized_blocks, JPEG_QUANT_MATRIX)
+    # wm_spatial_blocks = apply_idct(wm_dct_blocks)
+    watermarked_img = merge_blocks(wm_quantized_blocks, cover_img.shape, block_size=block_size)
 
     # Дополнительно можно построить гистограммы робастных признаков до и после
     freq_matrices_after = extract_frequency_matrices(wm_quantized_blocks, selected_bands, M, N)

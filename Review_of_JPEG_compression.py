@@ -187,34 +187,89 @@ def jpeg_compression_pipeline(image_path):
     cv2.imwrite("1.jpg", merge_blocks(reconstructed_blocks, img.shape))
     return merge_blocks(reconstructed_blocks, img.shape)
 
-def main():
-    """
-    Основная функция для вывода изображения до и после сжатия.
-    """
-    image_path = "Lena.jpg"
-
-    img_after_dct = jpeg_compression_pipeline(image_path)
-
-    original_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-
-    # Выводим исходное и обработанное изображения
-    plt.figure(figsize=(12, 6))
-
-    # Исходное изображение
-    plt.subplot(1, 3, 1)
-    plt.imshow(original_img, cmap='gray')
-    plt.title("Исходное изображение")
-    plt.axis('off')
-
-    # Изображение после DCT
-    plt.subplot(1, 3, 2)
-    plt.imshow(img_after_dct, cmap='gray')
-    plt.title("После DCT")
-    plt.axis('off')
-
-
-    plt.tight_layout()
-    plt.show()
+# def main():
+#     """
+#     Основная функция для вывода изображения до и после сжатия.
+#     """
+#     image_path = "Lena.jpg"
+#
+#     img_after_dct = jpeg_compression_pipeline(image_path)
+#
+#     original_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+#
+#     # Выводим исходное и обработанное изображения
+#     plt.figure(figsize=(12, 6))
+#
+#     # Исходное изображение
+#     plt.subplot(1, 3, 1)
+#     plt.imshow(original_img, cmap='gray')
+#     plt.title("Исходное изображение")
+#     plt.axis('off')
+#
+#     # Изображение после DCT
+#     plt.subplot(1, 3, 2)
+#     plt.imshow(img_after_dct, cmap='gray')
+#     plt.title("После DCT")
+#     plt.axis('off')
+#
+#
+#     plt.tight_layout()
+#     plt.show()
 
 if __name__ == "__main__":
-    main()
+    # 1. Создаём простую 8×8 матрицу (например, значения от 0 до 63)
+    input_matrix = np.arange(64, dtype=np.float32).reshape(8, 8)
+    print("Исходная 8×8 матрица:")
+    print(input_matrix)
+
+    # 2. Применяем DCT
+    dct_matrix = apply_dct(input_matrix)
+    print("\nDCT-коэффициенты:")
+    print(np.round(dct_matrix, 2))
+
+    # 3. Квантование: делим каждый коэффициент на соответствующий элемент матрицы квантования и округляем
+    quantized = np.round(dct_matrix / JPEG_QUANT_MATRIX).astype(int)
+    print("\nКвантованные DCT-коэффициенты:")
+    print(quantized)
+
+    # 4. Зигзагообразное сканирование: преобразуем 8×8 блок в одномерный вектор длины 64
+    zigzag_vector = zigzag_scan(quantized)
+    print("\nЗигзагообразное представление (вектор длины 64):")
+    print(zigzag_vector.astype(int))
+
+    # 5. Полное энтропийное кодирование: строим дерево Хаффмана и кодируем вектор
+    huffman_tree = build_huffman_tree(zigzag_vector)
+    codebook = generate_huffman_codes(huffman_tree)
+    print("\nHuffman codebook:")
+    for symbol in sorted(codebook.keys()):
+        print(f"Символ {symbol}: {codebook[symbol]}")
+
+    encoded_bitstream = huffman_encode(zigzag_vector, codebook)
+    print("\nЗакодированный битовый поток:")
+    print(encoded_bitstream)
+
+    # 6. Полное энтропийное декодирование: декодируем битовый поток обратно в вектор
+    decoded_vector = huffman_decode(encoded_bitstream, huffman_tree)
+    decoded_vector = np.array(decoded_vector)
+    print("\nДекодированный вектор (должен совпадать с оригинальным):")
+    print(decoded_vector.astype(int))
+
+    if np.array_equal(decoded_vector, zigzag_vector):
+        print("\nДекодирование успешно: вектор совпадает с оригиналом.")
+    else:
+        print("\nОшибка: декодированный вектор отличается от оригинала.")
+
+    # 7. Обратное зигзагообразное сканирование
+    recovered_quantized = inverse_zigzag_scan(decoded_vector, block_size=8)
+    print("\nВосстановленный блок после обратного зигзагообразного сканирования:")
+    print(recovered_quantized)
+
+    # 8. Деквантование: умножаем полученный блок на матрицу квантования
+    dequantized = recovered_quantized * JPEG_QUANT_MATRIX
+    print("\nДеквантованные DCT-коэффициенты:")
+    print(np.round(dequantized, 2))
+
+    # 9. Обратное DCT (IDCT) для восстановления исходной матрицы
+    recovered_matrix = apply_idct(dequantized)
+    print("\nВосстановленная матрица после IDCT:")
+    print(np.round(recovered_matrix, 2))
