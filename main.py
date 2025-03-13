@@ -79,7 +79,7 @@ def get_selected_bands():
             # Проверяем, что все полосы находятся в допустимом диапазоне
             if all(1 <= band <= 64 for band in input_bands):
                 # Для каждой введённой полосы вычисляем 64 - band
-                selected_bands = [band for band in input_bands]
+                selected_bands = [64 - band for band in input_bands]
                 print(f"Выбранные полосы: {input_bands}")
                 return selected_bands, input_bands
             else:
@@ -201,8 +201,8 @@ def embed_watermark_to_image():
 
     if compare_images == 'да':
         # Загружаем исходное изображение для сравнения
-        # original_img = jpeg_compression_pipeline(image_path)
-        original_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        original_img = jpeg_compression_pipeline(image_path)
+        # original_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
         # Отображаем оба изображения рядом
         plt.figure(figsize=(12, 6))
@@ -350,8 +350,8 @@ def evaluate_quality():
     extracted_watermark_path = input("\nВведите путь к извлеченному водяному знаку: ").strip()
 
     # Загружаем все изображения
-    original_img = cv2.imread(original_img_path, cv2.IMREAD_GRAYSCALE)
-    # original_img = jpeg_compression_pipeline(image_path)
+    # original_img = cv2.imread(original_img_path, cv2.IMREAD_GRAYSCALE)
+    original_img = jpeg_compression_pipeline(original_img_path)
     watermarked_img = cv2.imread(watermarked_img_path, cv2.IMREAD_GRAYSCALE)
     original_watermark = cv2.imread(original_watermark_path, cv2.IMREAD_GRAYSCALE)
     extracted_watermark = cv2.imread(extracted_watermark_path, cv2.IMREAD_GRAYSCALE)

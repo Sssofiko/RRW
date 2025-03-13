@@ -44,6 +44,14 @@ def compute_shifted_cell(cell, w, t_r):
     flat_shifted[~odd_mask] = flat[~odd_mask] - factor * shifts[~odd_mask]
     # Приводим обратно к матричной форме
     return flat_shifted.reshape(m, n)
+    # m, n = cell.shape
+    # total = m * n
+    # signs = np.array([1 if i % 2 == 0 else -1 for i in range(total)])
+    # flat = cell.flatten()
+    # lambda_orig = np.sum(flat * signs)
+    # d = T if w == 1 else -T  # желаемое изменение
+    # flat[0] += d
+    # return flat.reshape(m, n)
 
 
 def compute_shifted_cells(cells, w, T, R):
