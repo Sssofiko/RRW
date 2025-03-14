@@ -2,11 +2,6 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-# Функции базового JPEG-процесса (split_into_blocks, apply_dct, quantize, dequantize,
-# apply_idct, zigzag_scan, inverse_zigzag_scan, JPEG_QUANT_MATRIX) предполагается,
-# что определены в файле 2_1_Review_of_JPEG_compression.py и будут импортированы в main.py.
-
-# --- Функции RRW (Section 2.2) ---
 
 def robust_feature_extraction(quantized_blocks, selected_bands, key_s):
     """
@@ -34,6 +29,7 @@ def robust_feature_extraction(quantized_blocks, selected_bands, key_s):
         features.append(eta)
     return np.array(features)
 
+
 def plot_histogram(features, title):
     """
     Строит гистограмму значений features с указанным заголовком.
@@ -48,6 +44,7 @@ def plot_histogram(features, title):
     plt.xlabel('Robust feature value')
     plt.ylabel('Frequency')
     plt.show()
+
 
 def choose_threshold(features, delta=5):
     """
@@ -64,6 +61,7 @@ def choose_threshold(features, delta=5):
       "Then, a threshold T that satisfies T > max(|Λ|) is selected..."
     """
     return np.max(np.abs(features)) + delta
+
 
 def embed_watermark_in_blocks(quantized_blocks, watermark_bits, selected_bands, T):
     """
@@ -93,6 +91,7 @@ def embed_watermark_in_blocks(quantized_blocks, watermark_bits, selected_bands, 
         updated_blocks.append(mod_block)
     return np.array(updated_blocks)
 
+
 def extract_watermark_from_blocks(quantized_blocks, selected_bands, key_s):
     """
     Извлекает водяной знак по формуле (7):
@@ -112,6 +111,7 @@ def extract_watermark_from_blocks(quantized_blocks, selected_bands, key_s):
     features = robust_feature_extraction(quantized_blocks, selected_bands, key_s)
     watermark = [1 if f >= 0 else 0 for f in features]
     return np.array(watermark), features
+
 
 def simulate_RRW_framework(cover_quantized_blocks, cover_img_shape, watermark_path, selected_bands, key_s):
     """

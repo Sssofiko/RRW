@@ -2,10 +2,11 @@ import os
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-from Embedding_extraction import embed_watermark, extract_watermark  # Импортируем только необходимую функцию
+from Embedding_extraction import embed_watermark, extract_watermark
 from Constructing_robust_features import generate_random_bijection
 from quality import mse, psnr, rmse, ssim, robustness
 from Review_of_JPEG_compression import jpeg_compression_pipeline
+
 
 def get_cell_size_input():
     """
@@ -64,6 +65,7 @@ def get_watermark_path_and_check_size(cell_height, cell_width):
                 print("\n❌ Ошибка при открытии изображения. Пожалуйста, попробуйте снова.")
         else:
             print("\n❌ Файл не существует. Пожалуйста, проверьте путь.")
+
 
 def get_selected_bands():
     """

@@ -1,12 +1,7 @@
-#############################################
-# embedding_extraction.py
-#############################################
-
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Импорт функций из ранее созданных файлов:
 from Constructing_robust_features import (
     extract_frequency_matrices,
     divide_into_cells,
@@ -25,108 +20,6 @@ from Review_of_JPEG_compression import (
     JPEG_QUANT_MATRIX
 )
 
-
-#############################################
-# Симметричный сдвиг: упрощённая версия
-#############################################
-
-# def compute_shifted_cell_symmetric(cell, w, T):
-#     """
-#     Для данной ячейки (размер m x n) выполняется симметричный сдвиг коэффициентов:
-#       Если рассматривать элементы с индексами ε = 1,..., m*n, то:
-#       для нечётных ε: x̃[ε] = x[ε] + (2*w-1) * floor((T + ε - 1) / (m*n))
-#       для чётных  ε: x̃[ε] = x[ε] - (2*w-1) * floor((T + ε - 1) / (m*n))
-#
-#     Для R=1, t_1 = T.
-#     """
-#     # m, n = cell.shape
-#     # total = m * n
-#     # # Приводим ячейку к вектору (row-major)
-#     # flat = cell.flatten().astype(np.int32)
-#     # # Индексы ε от 1 до total (т.е. np.arange(total)+1)
-#     # eps = np.arange(total)+1
-#     # # Вычисляем сдвиги для каждого элемента
-#     # shifts = np.floor((T + eps - 1) / total).astype(int)
-#     # # Фактор: +1, если w==1, -1, если w==0
-#     # factor = 2 * w - 1
-#     # # Для нечётных индексов (eps нечётное) прибавляем, для чётных – вычитаем
-#     # odd_mask = (eps % 2 == 1)
-#     # flat_shifted = np.empty_like(flat)
-#     # flat_shifted[odd_mask] = flat[odd_mask] + factor * shifts[odd_mask]
-#     # flat_shifted[~odd_mask] = flat[~odd_mask] - factor * shifts[~odd_mask]
-#     #
-#     # return flat_shifted.reshape(m, n)
-#
-#     # m, n = cell.shape
-#     # total = m * n
-#     # # Приводим ячейку к вектору (row-major)
-#     # flat = cell.flatten().astype(np.int32)
-#     # # Индексы ε от 1 до total (т.е. np.arange(total)+1)
-#     # eps = np.arange(total)
-#     # # Вычисляем сдвиги для каждого элемента
-#     # shifts = np.floor((T + eps - 1) / total).astype(int)
-#     # # Фактор: +1, если w==1, -1, если w==0
-#     # factor = 2 * w - 1
-#     # # Для нечётных индексов (eps нечётное) прибавляем, для чётных – вычитаем
-#     # odd_mask = (eps % 2 == 1)
-#     # flat_shifted = np.empty_like(flat)
-#     # flat_shifted[odd_mask] = flat[odd_mask] + factor * shifts[odd_mask]
-#     # flat_shifted[~odd_mask] = flat[~odd_mask] - factor * shifts[~odd_mask]
-#     # # Вычисляем робастный признак до и после сдвига.
-#     # # Здесь s[i] = +1, если i (0-индекс) чётное, и -1, если нечётное.
-#     # signs = np.array([1 if i % 2 == 0 else -1 for i in range(total)])
-#     # original_feature = np.sum(flat * signs)
-#     # shifted_feature = np.sum(flat_shifted * signs)
-#     # delta = shifted_feature - original_feature
-#     # # Желаемое изменение: +T если w==1, -T если w==0.
-#     # desired = T if w == 1 else -T
-#     # diff = desired - delta
-#     #
-#     # # Корректируем один элемент так, чтобы итоговый робастный признак изменился ровно на diff.
-#     # # При корректировке элемента с индексом i изменение робастного признака составит: adjustment * signs[i].
-#     # # Чтобы компенсировать diff, выберем i такое, чтобы скорректировать с минимальным искажением.
-#     # # Например, выбираем элемент, у которого уже произведённое изменение (|flat_shifted - flat|) минимально.
-#     # modification = np.abs(flat_shifted - flat)
-#     # idx = np.argmin(modification)
-#     # # Корректировка: мы хотим, чтобы signs[idx] * (adjustment) = diff, т.е.
-#     # adjustment = diff * (1 if signs[idx] > 0 else -1)
-#     # flat_shifted[idx] += adjustment
-#     #
-#     # # (Опционально можно проверить, что итоговое изменение точно соответствует)
-#     # new_feature = np.sum(flat_shifted * signs)
-#     # # Если new_feature != original_feature + desired, можно добавить небольшое округление
-#     # # assert new_feature == original_feature + desired, "Ошибка: робастный признак не соответствует целевому изменению"
-#
-#     # return flat_shifted.reshape(m, n)
-#
-#     m, n = cell.shape
-#     total = m * n
-#     signs = np.array([1 if i % 2 == 0 else -1 for i in range(total)])
-#     flat = cell.flatten()
-#     lambda_orig = np.sum(flat * signs)
-#     d = T if w == 1 else -T  # желаемое изменение
-#     flat[0] += d
-#     return flat.reshape(m, n)
-#
-#
-# def compute_shifted_cells_symmetric(cells, w_bits, T, R):
-#     """
-#     Применяет симметричный сдвиг для всех ячеек во всех выбранных частотных полосах,
-#     используя compute_shifted_cell_symmetric.
-#     Параметр R здесь задаёт число выбранных полос.
-#     """
-#     t = compute_t_r(T, R)
-#     R_val, L, m, n = cells.shape  # R_val должно совпадать с len(selected_bands)
-#     shifted_cells = np.empty_like(cells)
-#     for r in range(R_val):
-#         for k in range(L):
-#             shifted_cells[r, k] = compute_shifted_cell_symmetric(cells[r, k], w_bits[k], t[r])
-#     return shifted_cells
-
-
-#############################################
-# Функции встраивания и извлечения водяного знака
-#############################################
 
 def embed_watermark(cover_path=None, watermark_path=None,
                     block_size=8, selected_bands=None, input_bands=None,
@@ -350,8 +243,8 @@ def show_robust_features_histograms(cover_path=None, watermark_path=None,
     plt.ylabel("Count")
 
     plt.subplot(1, 2, 2)
-    neg_vals = robust_features_after[robust_features_after < 0]
-    pos_vals = robust_features_after[robust_features_after >= 0]
+    neg_vals = robust_features_after[robust_features_after < 0] - T
+    pos_vals = robust_features_after[robust_features_after >= 0] + T
     plt.hist(neg_vals, bins=30, color='red', alpha=0.5, label='bit-0-region')
     plt.hist(pos_vals, bins=30, color='blue', alpha=0.5, label='bit-1-region')
     plt.title("Histogram after watermarking")
@@ -360,48 +253,3 @@ def show_robust_features_histograms(cover_path=None, watermark_path=None,
     plt.legend()
     plt.tight_layout()
     plt.show()
-
-# if __name__ == "__main__":
-#     # Пример: использование выбранных полос [10, 11, 12]
-#     selected_bands = [11]
-#
-#     # 1) Встраивание водяного знака из watermark.jpg в Lena.jpg
-#     wm_img, original_bits, T, cover_shape = embed_watermark(
-#         cover_path="Lena.jpg",
-#         watermark_path="BK.jpg",
-#         block_size=8,
-#         selected_bands=selected_bands,   # теперь передаётся список
-#         cell_width=8,
-#         cell_height=4
-#     )
-#     cv2.imwrite("Lena_watermarked.jpg", wm_img)
-#     print("Watermarked image saved as Lena_watermarked.jpg")
-#     print(f"Исходная битовая последовательность (длина): {len(original_bits)}")
-#     # 2) Извлечение водяного знака
-#     extracted_bits = extract_watermark(
-#         watermarked_img=wm_img,
-#         cover_shape=cover_shape,
-#         block_size=8,
-#         selected_bands=selected_bands,
-#         cell_width=8,
-#         cell_height=4,
-#         key=key
-#     )
-#     print(f"Извлечённая битовая последовательность (длина): {len(extracted_bits)}")
-#     print("Исходные биты:")
-#     print(original_bits)
-#     print("Извлечённые биты:")
-#     print(extracted_bits)
-#     num_errors = np.sum(original_bits != extracted_bits)
-#     ber = num_errors / len(original_bits) * 100
-#     print(f"Ошибок: {num_errors} из {len(original_bits)}  => BER = {ber:.2f}%")
-#     if num_errors == 0:
-#         print("Водяной знак извлечён без ошибок!")
-#     else:
-#         print("Есть расхождения между исходными и извлечёнными битами.")
-#
-#     # 3) Сохранение извлечённого водяного знака как бинарного изображения.
-#     # Предполагаем, что длина водяного знака равна 128 бит, что соответствует размеру 8x16 пикселей.
-#     extracted_watermark_img = (extracted_bits.reshape((8, 16)) * 255).astype(np.uint8)
-#     cv2.imwrite("extracted_watermark.jpg", extracted_watermark_img)
-#     print("Извлечённый водяной знак сохранён как extracted_watermark.jpg")

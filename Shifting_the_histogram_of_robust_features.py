@@ -1,5 +1,5 @@
 from Constructing_robust_features import *
-import matplotlib.pyplot as plt
+
 
 def compute_t_r(T, R):
     """
@@ -44,14 +44,6 @@ def compute_shifted_cell(cell, w, t_r):
     flat_shifted[~odd_mask] = flat[~odd_mask] - factor * shifts[~odd_mask]
     # Приводим обратно к матричной форме
     return flat_shifted.reshape(m, n)
-    # m, n = cell.shape
-    # total = m * n
-    # signs = np.array([1 if i % 2 == 0 else -1 for i in range(total)])
-    # flat = cell.flatten()
-    # lambda_orig = np.sum(flat * signs)
-    # d = T if w == 1 else -T  # желаемое изменение
-    # flat[0] += d
-    # return flat.reshape(m, n)
 
 
 def compute_shifted_cells(cells, w, T, R):
@@ -141,130 +133,3 @@ def replace_frequency_matrices_in_blocks(blocks, freq_matrices, selected_bands, 
                 modified_blocks[block_idx, i_coord, j_coord] = freq_matrices[r, i, j]
 
     return modified_blocks
-
-
-# Пример применения:
-if __name__ == "__main__":
-    # Допустим, у нас есть изображение с размерами 512x512
-    # Число блоков: M = 512 // 8 = 64, N = 512 // 8 = 64
-    M = 512 // 8  # 64 блока по вертикали
-    N = 512 // 8  # 64 блока по горизонтали
-    num_blocks = M * N
-
-    # Создадим псевдо-блоки (8×8) с целочисленными значениями, имитирующими квантованные DCT коэффициенты
-    blocks = np.random.randint(-20, 20, (num_blocks, 8, 8))
-    # Выбранные частотные полосы: R = 3, {13, 11, 20}
-    selected_bands = [13, 11, 20]
-
-    freq_matrices = extract_frequency_matrices(blocks, selected_bands, M, N)
-    # три матрицы каждая из которых имеет размеры 64x64, как и расположение блоков в изображении.
-
-    # Задаём размеры ячейки
-    cell_height = 8  # высота ячейки (m)
-    cell_width = 4  # ширина ячейки (n)
-
-    # Число ячеек по вертикали: 64 // 8 = 8, по горизонтали: 64 // 4 = 16
-    # Итого L = 8 * 16 = 128 ячеек на каждую матрицу.
-    cells = divide_into_cells(freq_matrices, cell_height, cell_width)
-
-    key = generate_random_bijection(cell_height, cell_width)
-
-    # Вычисляем разностную статистику для каждой ячейки
-    eta = compute_difference_statistics(cells, key)
-
-    # Вычисляем робастный признак λ(k) для всех ячеек
-    robust_features = compute_robust_features(eta)
-
-    # Параметры примера
-    R = len(selected_bands)  # число выбранных частотных полос
-    L = M // cell_height * N // cell_width  # число ячеек в каждой матрице
-    T = np.max(np.abs(robust_features)) + 1  # порог, соответствующий условию T > max(|λ(k)|)
-    print(f'порог: {T}')
-
-    # Случайно зададим биты водяного знака для каждой ячейки (0 или 1)
-    w = np.random.randint(0, 2, size=(L,))
-
-    print(f'водяной знак: {w[12]}')
-
-    # print("Исходные ячейки (для каждой частотной полосы, L ячеек):")
-    # for r in range(R):
-    #     print(f"Полоса {r}:")
-    #     print(cells[r])
-    # print("\nБиты водяного знака для ячеек (w):")
-    # print(w)
-
-    # Вычисляем водяные ячейки
-    wm_cells = compute_shifted_cells(cells, w, T, R)
-
-    # print("\nЯчейки после применения целочисленного преобразования (x̃):")
-    # for r in range(R):
-    #     print(f"Полоса {r}:")
-    #     print(shifted[r])
-
-    wm_freq_matrices = merge_cells(wm_cells, cell_height, cell_width, M, N)
-
-    wm_blocks = replace_frequency_matrices_in_blocks(blocks, wm_freq_matrices, selected_bands, M, N)
-
-    # M = 512 // 8
-    # N = 512 // 8
-    # num_blocks = M * N
-    #
-    # # Исходные (псевдо)блоки квантованных DCT коэффициентов
-    # blocks = np.random.randint(-20, 20, (num_blocks, 8, 8))
-    # selected_bands = [13, 11, 20]
-    #
-    # # Извлекаем матрицы частот
-    # freq_matrices = extract_frequency_matrices(blocks, selected_bands, M, N)
-    #
-    # cell_height = 8
-    # cell_width = 4
-    # cells = divide_into_cells(freq_matrices, cell_height, cell_width)
-    #
-    # # Генерируем случайный ключ (биекцию)
-    # key = generate_random_bijection(cell_height, cell_width)
-    #
-    # # Считаем разностную статистику до встраивания
-    # eta_before = compute_difference_statistics(cells, key)
-    # robust_features_before = compute_robust_features(eta_before)
-    #
-    # # Определяем порог T
-    # T = np.max(np.abs(robust_features_before)) + 1
-    #
-    # # Генерируем случайные биты водяного знака
-    # L = (M // cell_height) * (N // cell_width)
-    # w = np.random.randint(0, 2, size=(L,))
-    #
-    # R = len(selected_bands)
-    #
-    # # Выполняем целочисленное преобразование (встраивание)
-    # wm_cells = compute_shifted_cells(cells, w, T, R)
-    #
-    # # Чтобы посмотреть, что получилось, пересчитаем робастные признаки после встраивания
-    # eta_after = compute_difference_statistics(wm_cells, key)
-    # robust_features_after = compute_robust_features(eta_after)
-    #
-    # # --- ПОСТРОЕНИЕ ГИСТОГРАММ ---
-    #
-    # plt.figure(figsize=(12, 5))
-    #
-    # # (a) Гистограмма робастных признаков до внедрения
-    # plt.subplot(1, 2, 1)
-    # plt.hist(robust_features_before, bins=30, color='orange')
-    # plt.title("Histogram before watermarking")
-    # plt.xlabel("Value")
-    # plt.ylabel("Count")
-    #
-    # # (b) Гистограмма робастных признаков после внедрения
-    # #    Покажем отрицательные и положительные значения разными цветами
-    # plt.subplot(1, 2, 2)
-    # neg_vals = robust_features_after[robust_features_after < 0]
-    # pos_vals = robust_features_after[robust_features_after >= 0]
-    # plt.hist(neg_vals, bins=30, color='red', alpha=0.5, label='bit-0-region')
-    # plt.hist(pos_vals, bins=30, color='blue', alpha=0.5, label='bit-1-region')
-    # plt.title("Histogram after watermarking")
-    # plt.xlabel("Value")
-    # plt.ylabel("Count")
-    # plt.legend()
-    #
-    # plt.tight_layout()
-    # plt.show()

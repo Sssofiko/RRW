@@ -163,6 +163,7 @@ def compute_robust_features(eta):
 
     return lambda_k
 
+
 # Пример использования:
 if __name__ == "__main__":
     # Допустим, у нас есть изображение с размерами 256x320
