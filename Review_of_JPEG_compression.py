@@ -193,5 +193,4 @@ def jpeg_compression_pipeline(image_path):
     recovered_quantized_blocks = [inverse_zigzag_scan(block) for block in decoded_zigzag_blocks]
     dequantized_blocks = dequantize(np.array(recovered_quantized_blocks), JPEG_QUANT_MATRIX)
     reconstructed_blocks = apply_idct(dequantized_blocks)
-    cv2.imwrite("1.jpg", merge_blocks(reconstructed_blocks, img.shape))
     return merge_blocks(reconstructed_blocks, img.shape)

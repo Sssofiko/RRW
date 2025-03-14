@@ -75,23 +75,6 @@ def embed_watermark(cover_path=None, watermark_path=None,
     watermark_bits[0] = 1
     # Определение порога T: выбираем T так, чтобы T > max(|λ|) для обратимости
     T = np.max(np.abs(robust_features_before)) + 1
-    print(T)
-    # recommended_T = np.max(np.abs(robust_features_before)) + 1
-    # print(f"\nРекомендуемый порог T: {recommended_T}")
-    #
-    # # Предложение пользователю задать свой порог T или использовать рекомендуемый
-    # T_input = input(f"Желаете задать собственное значение T (рекомендуемое: {recommended_T}) или использовать рекомендованное? (1 - собственное, 2 - рекомендуемое): ").strip().lower()
-    #
-    # if T_input == '1':
-    #     try:
-    #         T = float(input("Введите собственное значение порога T: ").strip())
-    #     except ValueError:
-    #         print("❌ Неверный формат ввода, используется рекомендованное значение.")
-    #         T = recommended_T
-    # elif T_input == '2':
-    #     T = recommended_T
-    # else:
-    #     print("\n❌ Некорректный выбор. Пожалуйста, выберите 1 или 2.")
 
     # Встраивание: симметричный сдвиг гистограмм робастных признаков
     wm_cells = compute_shifted_cells(cells, watermark_bits, T, R)
@@ -236,13 +219,13 @@ def show_robust_features_histograms(cover_path=None, watermark_path=None,
     robust_features_after = compute_robust_features(eta_after)
 
     plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1)
+    plt.subplot(1, 3, 1)
     plt.hist(robust_features_before, bins=30, color='orange')
     plt.title("Histogram before watermarking")
     plt.xlabel("Value")
     plt.ylabel("Count")
 
-    plt.subplot(1, 2, 2)
+    plt.subplot(1, 3, 2)
     neg_vals = robust_features_after[robust_features_after < 0] - T
     pos_vals = robust_features_after[robust_features_after >= 0] + T
     plt.hist(neg_vals, bins=30, color='red', alpha=0.5, label='bit-0-region')
@@ -250,6 +233,16 @@ def show_robust_features_histograms(cover_path=None, watermark_path=None,
     plt.title("Histogram after watermarking")
     plt.xlabel("Value")
     plt.ylabel("Count")
+
+    plt.subplot(1, 3, 2)
+    neg_vals = robust_features_after[robust_features_after < 0] - T
+    pos_vals = robust_features_after[robust_features_after >= 0] + T
+    plt.hist(neg_vals, bins=30, color='red', alpha=0.5, label='bit-0-region')
+    plt.hist(pos_vals, bins=30, color='blue', alpha=0.5, label='bit-1-region')
+    plt.title("Histogram after watermarking")
+    plt.xlabel("Value")
+    plt.ylabel("Count")
+
     plt.legend()
     plt.tight_layout()
     plt.show()
